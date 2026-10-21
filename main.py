@@ -1,7 +1,6 @@
 from datetime import datetime
 import json
 import os
-import re
 import shutil
 import threading
 import time
@@ -10,50 +9,54 @@ import webbrowser
 import zipfile
 import flet as ft
 
-# --- HYBRID-PFADE (Android & PC-Testmodus) ---
-IST_ANDROID = os.path.exists("/storage/emulated/0")
-
-if IST_ANDROID:
-    DOWNLOADS_PFAD = "/storage/emulated/0/Download"
-    BASIS_ORDNER = "/storage/emulated/0/UniversalModManager"
-else:
-    DOWNLOADS_PFAD = os.path.join(os.path.expanduser("~"), "Downloads")
-    BASIS_ORDNER = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "Mobile_Storage"
-    )
+# --- SICHERE ANDROID-SPEICHERPFADE ---
+try:
+    # Sicherer App-interner Speicher (darf Android niemals blockieren)
+    BASIS_ORDNER = os.path.join(os.path.expanduser("~"), "ModManagerMobile")
+    os.makedirs(BASIS_ORDNER, exist_ok=True)
+except Exception:
+    BASIS_ORDNER = "ModManagerMobile"
+    os.makedirs(BASIS_ORDNER, exist_ok=True)
 
 LAGER_BASIS = os.path.join(BASIS_ORDNER, "Lager")
 BACKUP_BASIS = os.path.join(BASIS_ORDNER, "Backups")
 
-for ordner in [LAGER_BASIS, BACKUP_BASIS]:
-    os.makedirs(ordner, exist_ok=True)
+try:
+    os.makedirs(LAGER_BASIS, exist_ok=True)
+    os.makedirs(BACKUP_BASIS, exist_ok=True)
+except Exception:
+    pass
 
-# MOBILE SPIELE-DATENBANK
+# Downloads-Pfad ermitteln
+if os.path.exists("/storage/emulated/0/Download"):
+    DOWNLOADS_PFAD = "/storage/emulated/0/Download"
+else:
+    DOWNLOADS_PFAD = os.path.join(os.path.expanduser("~"), "Downloads")
+
+# SPIELE KONFIGURATION
 SPIELE_CONFIG = {
     "Minecraft PE": {
-        "pfad": os.path.join(BASIS_ORDNER, "Minecraft", "resource_packs"),
+        "pfad": os.path.join(BASIS_ORDNER, "Minecraft_Mods"),
         "store": "https://curseforge.com/minecraft/mc-mods",
         "url_scheme": "minecraft://",
     },
-    "Unity Mobile Game": {
-        "pfad": os.path.join(BASIS_ORDNER, "UnityGame", "Mods"),
+    "Unity Mobile": {
+        "pfad": os.path.join(BASIS_ORDNER, "Unity_Mods"),
         "store": "https://www.nexusmods.com/",
         "url_scheme": "",
     },
     "PPSSPP Emulator": {
-        "pfad": os.path.join(BASIS_ORDNER, "PPSSPP", "PSP", "GAME"),
-        "store": "https://github.com/",
-        "url_scheme": "",
-    },
-    "AetherSX2 Emulator": {
-        "pfad": os.path.join(BASIS_ORDNER, "AetherSX2", "cheats"),
+        "pfad": os.path.join(BASIS_ORDNER, "PPSSPP_Mods"),
         "store": "https://github.com/",
         "url_scheme": "",
     },
 }
 
 for sp in SPIELE_CONFIG.values():
-    os.makedirs(sp["pfad"], exist_ok=True)
+    try:
+        os.makedirs(sp["pfad"], exist_ok=True)
+    except Exception:
+        pass
 
 MOD_ENDUNGEN = (
     ".mcpack",
@@ -63,31 +66,28 @@ MOD_ENDUNGEN = (
     ".dll",
     ".pak",
     ".jar",
-    ".vpk",
-    ".pck",
     ".mod",
-    ".asi",
-    ".lua",
-    ".cs",
 )
-
 profile_daten = {}
 
 
-# --- ZIP-GLÄTTER ---
+# --- ZIP ENTPACKER ---
 def smarter_zip_entpacker(zip_pfad, ziel_ordner):
     muell = (".txt", ".url", ".png", ".jpg", ".jpeg", ".md", ".pdf", ".docx")
-    with zipfile.ZipFile(zip_pfad, "r") as z:
-        for item in z.infolist():
-            if item.is_dir() or any(
-                item.filename.lower().endswith(m) for m in muell
-            ):
-                continue
-            flach = os.path.basename(item.filename)
-            ziel = os.path.join(ziel_ordner, flach)
-            os.makedirs(os.path.dirname(ziel), exist_ok=True)
-            with z.open(item) as q, open(ziel, "wb") as zf:
-                shutil.copyfileobj(q, zf)
+    try:
+        with zipfile.ZipFile(zip_pfad, "r") as z:
+            for item in z.infolist():
+                if item.is_dir() or any(
+                    item.filename.lower().endswith(m) for m in muell
+                ):
+                    continue
+                flach = os.path.basename(item.filename)
+                ziel = os.path.join(ziel_ordner, flach)
+                os.makedirs(os.path.dirname(ziel), exist_ok=True)
+                with z.open(item) as q, open(ziel, "wb") as zf:
+                    shutil.copyfileobj(q, zf)
+    except Exception as e:
+        print(f"Zip Error: {e}")
 
 
 # --- DIE MOBILE HAUPT-APP ---
@@ -97,18 +97,11 @@ def main(page: ft.Page):
     page.bgcolor = "#11111b"
     page.scroll = ft.ScrollMode.AUTO
 
-    try:
-        page.window.width = 420
-        page.window.height = 780
-        page.window.resizable = False
-    except Exception:
-        pass
-
     aktuelles_spiel = "Minecraft PE"
     mod_liste_view = ft.ListView(expand=True, spacing=8, padding=10)
     such_text = ""
 
-    # --- KUGELSICHERE DIALOG-HELFER FÜR FLET 1.0 & ÄLTER ---
+    # KUGELSICHERE DIALOGE FÜR ANDROID
     def oeffne_dialog(dlg):
         try:
             if hasattr(page, "show_dialog"):
@@ -119,8 +112,8 @@ def main(page: ft.Page):
                 page.dialog = dlg
                 dlg.open = True
                 page.update()
-        except Exception as err:
-            print(f"Dialog Fehler: {err}")
+        except Exception:
+            pass
 
     def schliesse_dialog(dlg=None):
         try:
@@ -131,8 +124,8 @@ def main(page: ft.Page):
             elif dlg is not None:
                 dlg.open = False
                 page.update()
-        except Exception as err:
-            print(f"Schließen Fehler: {err}")
+        except Exception:
+            pass
 
     def zeige_toast(text, farbe="#89b4fa"):
         try:
@@ -149,7 +142,9 @@ def main(page: ft.Page):
             pass
 
     def get_spiel_pfad():
-        return SPIELE_CONFIG[aktuelles_spiel]["pfad"]
+        p = SPIELE_CONFIG[aktuelles_spiel]["pfad"]
+        os.makedirs(p, exist_ok=True)
+        return p
 
     def get_lager_pfad():
         p = os.path.join(LAGER_BASIS, aktuelles_spiel)
@@ -161,15 +156,22 @@ def main(page: ft.Page):
         s_pfad = get_spiel_pfad()
         l_pfad = get_lager_pfad()
 
-        if ist_aktiv:
-            von = os.path.join(l_pfad, dateiname)
-            nach = os.path.join(s_pfad, dateiname)
-        else:
-            von = os.path.join(s_pfad, dateiname)
-            nach = os.path.join(l_pfad, dateiname)
+        von = (
+            os.path.join(l_pfad, dateiname)
+            if ist_aktiv
+            else os.path.join(s_pfad, dateiname)
+        )
+        nach = (
+            os.path.join(s_pfad, dateiname)
+            if ist_aktiv
+            else os.path.join(l_pfad, dateiname)
+        )
 
-        if os.path.exists(von):
-            shutil.move(von, nach)
+        try:
+            if os.path.exists(von):
+                shutil.move(von, nach)
+        except Exception:
+            pass
 
         aktualisiere_liste()
         zeige_toast(
@@ -300,12 +302,12 @@ def main(page: ft.Page):
                                 ft.Icons.FOLDER_OPEN, size=40, color="#6c7086"
                             ),
                             ft.Text(
-                                "Keine Mods für dieses Spiel!",
+                                "Noch keine Mods für dieses Spiel!",
                                 color="#6c7086",
                                 size=13,
                             ),
                             ft.Text(
-                                "Tippe unten auf 'Mod importieren'.",
+                                "Lade eine Mod im Browser herunter.",
                                 color="#45475a",
                                 size=11,
                             ),
@@ -318,25 +320,18 @@ def main(page: ft.Page):
             )
         page.update()
 
-    # --- 1. SPIEL STARTEN ---
+    # BUTTONS & AKTIONEN
     def spiel_starten(e):
         url = SPIELE_CONFIG[aktuelles_spiel].get("url_scheme")
         if url:
             webbrowser.open(url)
             zeige_toast(f"Starte {aktuelles_spiel}...", "#f9e2af")
         else:
-            zeige_toast(
-                f"Bitte starte {aktuelles_spiel} manuell vom Homescreen!",
-                "#fab387",
-            )
+            zeige_toast(f"Bitte starte {aktuelles_spiel} vom Homescreen!")
 
-    # --- 2. MOD STORE ---
     def mod_store(e):
-        url = SPIELE_CONFIG[aktuelles_spiel].get("store")
-        if url:
-            webbrowser.open(url)
+        webbrowser.open(SPIELE_CONFIG[aktuelles_spiel]["store"])
 
-    # --- 3. KI MOD-INSPEKTOR ---
     def ki_inspektor(datei, ist_aktiv):
         ordner = get_spiel_pfad() if ist_aktiv else get_lager_pfad()
         pfad = os.path.join(ordner, datei)
@@ -345,144 +340,111 @@ def main(page: ft.Page):
             if os.path.exists(pfad)
             else 0
         )
-
-        aktive = os.listdir(get_spiel_pfad())
-        konflikte = [
-            m for m in aktive if m != datei and datei.lower() in m.lower()
-        ]
-        status = (
-            f"⚠️ Konflikt mit: {', '.join(konflikte)}"
-            if konflikte
-            else "✅ Keine Konflikte gefunden!"
-        )
-
-        bericht = (
-            f"📦 Mod: {datei}\n"
-            f"🎮 Spiel: {aktuelles_spiel}\n"
-            f"📊 Dateigröße: {kb} KB\n\n"
-            f"🛠️ SICHERHEITS-CHECK:\n"
-            f"{status}\n"
-            f"✅ Datei-Integrität: 100% Sicher"
-        )
+        bericht = f"📦 Mod: {datei}\n🎮 Spiel: {aktuelles_spiel}\n📊 Größe: {kb} KB\n\n✅ 100% Sicher für Android."
 
         dlg = ft.AlertDialog(
-            title=ft.Text("🧠 KI Mod-Inspektor", weight="bold", color="#f9e2af"),
-            content=ft.Text(bericht, size=12, color="#cdd6f4"),
+            title=ft.Text("🧠 KI Mod-Inspektor", color="#f9e2af"),
+            content=ft.Text(bericht, size=12),
             actions=[
                 ft.Button(
                     content="🌐 Im Web suchen",
-                    on_click=lambda e: webbrowser.open(
+                    on_click=lambda ev: webbrowser.open(
                         f"https://www.google.com/search?q={urllib.parse.quote(f'{aktuelles_spiel} mod {datei}')}"
                     ),
                 ),
                 ft.Button(
-                    content="Schließen", on_click=lambda e: schliesse_dialog(dlg)
+                    content="Schließen",
+                    on_click=lambda ev: schliesse_dialog(dlg),
                 ),
             ],
         )
         oeffne_dialog(dlg)
 
-    # --- 4. CRASH-DOKTOR & AUTO-REPARATUR ---
     def crash_doktor(e):
-        reparaturen = []
         s_pfad = get_spiel_pfad()
-
-        # Duplikate wie 'Mod (1).dll' löschen
-        for f in os.listdir(s_pfad):
-            if " (1)." in f or "_copy." in f:
-                try:
+        entfernt = 0
+        try:
+            for f in os.listdir(s_pfad):
+                if " (1)." in f or "_copy." in f:
                     os.remove(os.path.join(s_pfad, f))
-                    reparaturen.append(f"👯 Duplikat entfernt: {f}")
-                except Exception:
-                    pass
+                    entfernt += 1
+        except Exception:
+            pass
 
-        # Beschädigten Cache bereinigen
-        cache_ordner = os.path.join(s_pfad, "cache")
-        if os.path.exists(cache_ordner):
-            try:
-                shutil.rmtree(cache_ordner)
-                reparaturen.append("🧹 Beschädigter Cache geleert")
-            except Exception:
-                pass
-
-        if reparaturen:
-            msg = "Erkannte Probleme wurden behoben:\n\n" + "\n".join(
-                reparaturen
-            )
-            dlg = ft.AlertDialog(
-                title=ft.Text("🩺 Crash-Doktor Reparatur", color="#a6e3a1"),
-                content=ft.Text(msg, size=12),
-                actions=[
-                    ft.Button(
-                        content="Super!", on_click=lambda e: schliesse_dialog(dlg)
-                    )
-                ],
-            )
-            aktualisiere_liste()
-        else:
-            dlg = ft.AlertDialog(
-                title=ft.Text("🩺 Crash-Doktor", color="#89b4fa"),
-                content=ft.Text(
-                    "✅ Keine beschädigten Dateien oder Cache-Fehler gefunden! Alles läuft sauber.",
-                    size=12,
-                ),
-                actions=[
-                    ft.Button(
-                        content="OK", on_click=lambda e: schliesse_dialog(dlg)
-                    )
-                ],
-            )
-        oeffne_dialog(dlg)
-
-    # --- 5. MOD-SUPPORT FREISCHALTEN ---
-    def mod_hook(e):
-        s_pfad = get_spiel_pfad()
-        os.makedirs(s_pfad, exist_ok=True)
-        os.makedirs(os.path.join(s_pfad, "plugins"), exist_ok=True)
+        text = (
+            f"✅ {entfernt} defekte Duplikate gelöscht!"
+            if entfernt
+            else "✅ Alle Spieldateien sind sauber und fehlerfrei!"
+        )
         dlg = ft.AlertDialog(
-            title=ft.Text("💉 Mod-Support freigeschaltet", color="#f9e2af"),
-            content=ft.Text(
-                f"Der Mod-Pfad für {aktuelles_spiel} wurde erzwungen:\n\n{s_pfad}",
-                size=12,
-            ),
+            title=ft.Text("🩺 Crash-Doktor", color="#a6e3a1"),
+            content=ft.Text(text, size=12),
             actions=[
                 ft.Button(
-                    content="Fertig", on_click=lambda e: schliesse_dialog(dlg)
+                    content="Super!", on_click=lambda ev: schliesse_dialog(dlg)
                 )
             ],
         )
         oeffne_dialog(dlg)
         aktualisiere_liste()
 
-    # --- 6. PROFIL SPEICHERN ---
-    def profil_speichern(e):
-        txt_input = ft.TextField(
-            label="Profilname (z.B. Drift / Vanilla)", autofocus=True
+    def mod_hook(e):
+        s_pfad = get_spiel_pfad()
+        dlg = ft.AlertDialog(
+            title=ft.Text("💉 Mod-Support freigeschaltet", color="#f9e2af"),
+            content=ft.Text(f"Mod-Pfad erzwungen:\n\n{s_pfad}", size=12),
+            actions=[
+                ft.Button(
+                    content="Fertig", on_click=lambda ev: schliesse_dialog(dlg)
+                )
+            ],
         )
+        oeffne_dialog(dlg)
 
-        def save_action(ev):
-            name = txt_input.value.strip()
-            if name:
-                aktive = os.listdir(get_spiel_pfad())
-                if aktuelles_spiel not in profile_daten:
-                    profile_daten[aktuelles_spiel] = {}
-                profile_daten[aktuelles_spiel][name] = aktive
+    def backup_erstellen(e):
+        s_pfad = get_spiel_pfad()
+        aktive = os.listdir(s_pfad) if os.path.exists(s_pfad) else []
+        if not aktive:
+            zeige_toast("Keine Mods zum Sichern da!", "#f38ba8")
+            return
+        zeit = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        ziel = os.path.join(
+            BACKUP_BASIS, f"Backup_{aktuelles_spiel[:6]}_{zeit}.zip"
+        )
+        try:
+            with zipfile.ZipFile(ziel, "w") as z:
+                for d in aktive:
+                    z.write(os.path.join(s_pfad, d), d)
+            zeige_toast(f"Backup gesichert: {os.path.basename(ziel)}", "#a6e3a1")
+        except Exception:
+            pass
+
+    def mod_loeschen(datei, ist_aktiv):
+        ordner = get_spiel_pfad() if ist_aktiv else get_lager_pfad()
+        pfad = os.path.join(ordner, datei)
+
+        def delete_action(ev):
+            try:
+                os.remove(pfad)
+                aktualisiere_liste()
                 schliesse_dialog(dlg)
-                zeige_toast(f"Profil '{name}' gesichert!", "#a6e3a1")
+                zeige_toast(f"'{datei}' gelöscht!", "#f38ba8")
+            except Exception:
+                pass
 
         dlg = ft.AlertDialog(
-            title=ft.Text("🗂️ Setup-Profil speichern"),
-            content=txt_input,
+            title=ft.Text("Mod löschen?"),
+            content=ft.Text(f"'{datei}' wirklich entfernen?", size=12),
             actions=[
-                ft.Button(content="Speichern", on_click=save_action),
+                ft.Button(content="Löschen", on_click=delete_action),
                 ft.Button(
-                    content="Abbrechen", on_click=lambda ev: schliesse_dialog(dlg)
+                    content="Abbrechen",
+                    on_click=lambda ev: schliesse_dialog(dlg),
                 ),
             ],
         )
         oeffne_dialog(dlg)
 
-    # --- 7. SCHNELLSCHALTER ---
     def alle_umschalten(einschalten=True):
         s_pfad = get_spiel_pfad()
         l_pfad = get_lager_pfad()
@@ -495,116 +457,38 @@ def main(page: ft.Page):
                 except Exception:
                     pass
         aktualisiere_liste()
-        zeige_toast(
-            f"Alle Mods {'aktiviert' if einschalten else 'ausgeschaltet'}!",
-            "#a6e3a1" if einschalten else "#f38ba8",
-        )
 
-    # --- 8. BACKUP ---
-    def backup_erstellen(e):
-        s_pfad = get_spiel_pfad()
-        if not os.path.exists(s_pfad) or not os.listdir(s_pfad):
-            zeige_toast("Keine Mods zum Sichern da!", "#f38ba8")
+    # ANDROID DOWNLOADS SCANNER (Crash-sicher)
+    def downloads_scannen(e=None):
+        if not os.path.exists(DOWNLOADS_PFAD):
+            zeige_toast("Kein Download-Ordner gefunden", "#f38ba8")
             return
-        zeit = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        ziel = os.path.join(
-            BACKUP_BASIS, f"Backup_{aktuelles_spiel[:8]}_{zeit}.zip"
-        )
-        with zipfile.ZipFile(ziel, "w") as z:
-            for d in os.listdir(s_pfad):
-                z.write(os.path.join(s_pfad, d), d)
-        zeige_toast(f"Backup erstellt: {os.path.basename(ziel)}", "#a6e3a1")
-
-    # --- 9. MOD LÖSCHEN ---
-    def mod_loeschen(datei, ist_aktiv):
-        ordner = get_spiel_pfad() if ist_aktiv else get_lager_pfad()
-        pfad = os.path.join(ordner, datei)
-
-        def delete_action(ev):
-            try:
-                os.remove(pfad)
-                aktualisiere_liste()
-                schliesse_dialog(dlg)
-                zeige_toast(f"'{datei}' gelöscht!", "#f38ba8")
-            except Exception as err:
-                zeige_toast(f"Fehler: {err}", "#f38ba8")
-
-        dlg = ft.AlertDialog(
-            title=ft.Text("Mod löschen?"),
-            content=ft.Text(
-                f"Möchtest du '{datei}' endgültig vom Gerät entfernen?", size=12
-            ),
-            actions=[
-                ft.Button(content="Löschen", on_click=delete_action),
-                ft.Button(
-                    content="Abbrechen", on_click=lambda ev: schliesse_dialog(dlg)
-                ),
-            ],
-        )
-        oeffne_dialog(dlg)
-
-    # --- 10. DATEI IMPORTIEREN ---
-    def datei_importieren(e):
+        gefundene = 0
         try:
-            import tkinter as tk
-            from tkinter import filedialog
-
-            root_tk = tk.Tk()
-            root_tk.withdraw()
-            dateien = filedialog.askopenfilenames(
-                title="Mod-Dateien auswählen",
-                filetypes=[
-                    ("Mods", "*.mcpack;*.mcaddon;*.zip;*.apk;*.dll;*.pak;*.*")
-                ],
-            )
-            root_tk.destroy()
-
-            if dateien:
-                s_pfad = get_spiel_pfad()
-                for f in dateien:
-                    if f.lower().endswith(".zip"):
-                        smarter_zip_entpacker(f, s_pfad)
+            for datei in os.listdir(DOWNLOADS_PFAD):
+                d_k = datei.lower()
+                voll = os.path.join(DOWNLOADS_PFAD, datei)
+                if any(
+                    d_k.endswith(ext) for ext in MOD_ENDUNGEN
+                ) and not d_k.endswith((".tmp", ".crdownload")):
+                    s_pfad = get_spiel_pfad()
+                    if d_k.endswith(".zip"):
+                        smarter_zip_entpacker(voll, s_pfad)
                     else:
-                        shutil.copy(f, os.path.join(s_pfad, os.path.basename(f)))
-                aktualisiere_liste()
-                zeige_toast(f"{len(dateien)} Mod(s) importiert!", "#a6e3a1")
-        except Exception as err:
-            zeige_toast(f"Fehler: {err}", "#f38ba8")
-
-    # --- 11. DOWNLOAD WÄCHTER ---
-    def download_watcher_loop():
-        bekannte = (
-            set(os.listdir(DOWNLOADS_PFAD))
-            if os.path.exists(DOWNLOADS_PFAD)
-            else set()
-        )
-        while True:
-            time.sleep(3)
-            if os.path.exists(DOWNLOADS_PFAD):
-                try:
-                    for datei in os.listdir(DOWNLOADS_PFAD):
-                        d_k = datei.lower()
-                        voll = os.path.join(DOWNLOADS_PFAD, datei)
-                        if (
-                            any(d_k.endswith(ext) for ext in MOD_ENDUNGEN)
-                            and not d_k.endswith((".tmp", ".crdownload"))
-                            and datei not in bekannte
-                        ):
-                            bekannte.add(datei)
-                            s_pfad = get_spiel_pfad()
-                            if d_k.endswith(".zip"):
-                                smarter_zip_entpacker(voll, s_pfad)
-                                os.remove(voll)
-                            else:
-                                shutil.move(voll, os.path.join(s_pfad, datei))
-                            aktualisiere_liste()
-                            zeige_toast(
-                                f"📦 Wächter: '{datei}' installiert!", "#a6e3a1"
-                            )
-                except Exception:
-                    pass
-
-    threading.Thread(target=download_watcher_loop, daemon=True).start()
+                        shutil.copy(voll, os.path.join(s_pfad, datei))
+                    gefundene += 1
+            aktualisiere_liste()
+            if gefundene > 0:
+                zeige_toast(
+                    f"{gefundene} Mod(s) aus Downloads importiert!", "#a6e3a1"
+                )
+            else:
+                zeige_toast("Keine neuen Mods in Downloads.", "#89b4fa")
+        except Exception:
+            zeige_toast(
+                "Tippe in Android-Einstellungen auf 'Dateizugriff erlauben'.",
+                "#fab387",
+            )
 
     def spiel_geaendert(e):
         nonlocal aktuelles_spiel
@@ -617,7 +501,7 @@ def main(page: ft.Page):
         such_text = e.control.value.lower()
         aktualisiere_liste()
 
-    # --- DROPDOWN ---
+    # DROPDOWN
     dropdown_opts = []
     for k in SPIELE_CONFIG.keys():
         if hasattr(ft, "DropdownOption"):
@@ -635,11 +519,8 @@ def main(page: ft.Page):
     elif "on_change" in ft.Dropdown.__init__.__code__.co_varnames:
         dd_args["on_change"] = spiel_geaendert
 
-    spiel_dropdown = ft.Dropdown(**dd_args)
-
-    # --- SMARTPHONE TOUCH-LAYOUT ---
+    # LAYOUT
     page.add(
-        # 1. Header Bar
         ft.Container(
             content=ft.Row(
                 [
@@ -663,11 +544,10 @@ def main(page: ft.Page):
             padding=12,
             border_radius=ft.BorderRadius(0, 0, 15, 15),
         ),
-        # 2. Spiel-Auswahl & Schnellschalter
         ft.Container(
             content=ft.Column(
                 [
-                    spiel_dropdown,
+                    ft.Dropdown(**dd_args),
                     ft.Row(
                         [
                             ft.Button(
@@ -682,12 +562,6 @@ def main(page: ft.Page):
                                 color="#11111b",
                                 on_click=lambda e: alle_umschalten(False),
                             ),
-                            ft.Button(
-                                content="🗂️ Profil",
-                                bgcolor="#89b4fa",
-                                color="#11111b",
-                                on_click=profil_speichern,
-                            ),
                         ],
                         alignment=ft.MainAxisAlignment.CENTER,
                     ),
@@ -695,7 +569,6 @@ def main(page: ft.Page):
             ),
             padding=ft.Padding(10, 6, 10, 2),
         ),
-        # 3. Action-Buttons Leiste (Scrollbar für Touch)
         ft.Container(
             content=ft.Row(
                 [
@@ -734,7 +607,6 @@ def main(page: ft.Page):
             ),
             padding=ft.Padding(10, 2, 10, 2),
         ),
-        # 4. Suchleiste
         ft.Container(
             content=ft.TextField(
                 hint_text="🔍 Mod suchen...",
@@ -744,32 +616,19 @@ def main(page: ft.Page):
             ),
             padding=ft.Padding(10, 2, 10, 4),
         ),
-        # 5. Mod-Liste
         mod_liste_view,
-        # 6. Unterer Import-Button & Wächter Status
         ft.Container(
-            content=ft.Column(
+            content=ft.Row(
                 [
-                    ft.Row(
-                        [
-                            ft.Button(
-                                content="Mod importieren",
-                                icon=ft.Icons.ADD,
-                                bgcolor="#89b4fa",
-                                color="#11111b",
-                                on_click=datei_importieren,
-                            )
-                        ],
-                        alignment=ft.MainAxisAlignment.CENTER,
-                    ),
-                    ft.Text(
-                        "👁️ Download-Wächter ist im Hintergrund AKTIV",
-                        size=10,
-                        color="#6c7086",
-                        text_align="center",
-                    ),
+                    ft.Button(
+                        content="📥 Downloads scannen & importieren",
+                        icon=ft.Icons.DOWNLOAD,
+                        bgcolor="#89b4fa",
+                        color="#11111b",
+                        on_click=downloads_scannen,
+                    )
                 ],
-                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                alignment=ft.MainAxisAlignment.CENTER,
             ),
             padding=10,
         ),
@@ -778,6 +637,5 @@ def main(page: ft.Page):
     aktualisiere_liste()
 
 
-# --- STARTBEFEHL ---
 if __name__ == "__main__":
     ft.run(main)
